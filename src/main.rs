@@ -18,29 +18,35 @@ fn main() {
             Ok(stream) => {
                 println!("accepted new connection");
 
-                let reader = BufReader::new(&stream);
+                let mut reader = BufReader::new(&stream);
                 let mut writer = BufWriter::new(&stream);
 
-                for msg in reader.lines() {
-                    match msg {
-                        Ok(str) => {
-                            let response = match str.to_lowercase().as_str() {
-                                "+ping" => "+PONG",
-                                _ => "+PONG",
-                            };
+                let mut msg = String::new();
+                reader.read_line(&mut msg);
 
-                            println!("msg: {}\nres: {}\n", str, response);
+                write!(writer, "+PONG\r\n").expect("should write");
+                writer.flush().expect("should have flushed");
 
-                            writer
-                                .write_all(format!("{}\r\n", response).as_bytes())
-                                .expect("Thought I could write back!?");
-                            writer.flush().expect("Couldn't flush");
-                        }
-                        Err(e) => {
-                            println!("error receiving: {}", e);
-                        }
-                    }
-                }
+                // for msg in reader.lines() {
+                //     match msg {
+                //         Ok(str) => {
+                //             let response = match str.to_lowercase().as_str() {
+                //                 "+ping" => "+PONG",
+                //                 _ => "+PONG",
+                //             };
+
+                //             println!("msg: {}\nres: {}\n", str, response);
+
+                //             writer
+                //                 .write_all(format!("{}\r\n", response).as_bytes())
+                //                 .expect("Thought I could write back!?");
+                //             writer.flush().expect("Couldn't flush");
+                //         }
+                //         Err(e) => {
+                //             println!("error receiving: {}", e);
+                //         }
+                //     }
+                // }
             }
             Err(e) => {
                 println!("error: {}", e);
