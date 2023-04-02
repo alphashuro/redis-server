@@ -32,8 +32,8 @@ fn handle_client(stream: TcpStream) {
         match msg {
             Ok(str) => {
                 let response = match str.to_lowercase().as_str() {
-                    "+ping" => "+PONG",
-                    _ => "+PONG",
+                    "ping" => "+PONG",
+                    _ => "+OK",
                 };
 
                 println!("msg: {}\nres: {}\n", str, response);
