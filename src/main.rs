@@ -39,7 +39,7 @@ fn handle_client(stream: TcpStream) {
                 println!("msg: {}\nres: {}\n", str, response);
 
                 writer
-                    .write_all(format!("{}\r\n", response).as_bytes())
+                    .write(format!("{}\r\n", response).as_bytes())
                     .expect("Thought I could write back!?");
                 writer.flush().expect("Couldn't flush");
             }
