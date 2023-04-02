@@ -22,30 +22,72 @@ fn main() {
     }
 }
 
+enum RespType {
+    SimpleString(String),
+    Error(String),
+    Integer(i64),
+    BulkString(usize),
+    Array(Vec<String>),
+}
+
+fn parse_msg(str: &str) -> Option<RespType> {
+    let mut chars = str.chars();
+
+    let resp_type_indicator = chars.next();
+
+    match resp_type_indicator {
+        Some('+') => Some(RespType::SimpleString(chars.collect())),
+        Some('-') => Some(RespType::Error(chars.collect())),
+        Some(':') => Some(RespType::Integer(
+            (chars.collect::<String>().trim()).parse::<i64>().unwrap(),
+        )),
+        Some('$') => {
+            let count_chars = chars.collect::<String>();
+            let count = count_chars.trim().parse::<usize>().unwrap();
+
+            Some(RespType::BulkString(count))
+        }
+        Some('*') => Some(RespType::Array(vec![])),
+        Some(_) | None => None,
+    }
+}
+
 fn handle_client(stream: TcpStream) {
     println!("accepted new connection");
 
     let mut reader = BufReader::new(&stream);
     let mut writer = BufWriter::new(&stream);
 
-    for msg in reader.lines() {
-        match msg {
-            Ok(str) => {
-                let response = match str.to_lowercase().as_str() {
+    loop {
+        let mut msg: String = Default::default();
+
+        reader.read_line(&mut msg).unwrap();
+
+        println!("msg: {}", msg);
+
+        let resp_type = parse_msg(&msg).unwrap();
+
+        match resp_type {
+            RespType::BulkString(_len) => {
+                let mut cmd: String = Default::default();
+
+                reader.read_line(&mut cmd).unwrap();
+
+                println!("cmd: {:?}", cmd);
+
+                let res = match cmd.as_str().trim() {
                     "ping" => "+PONG",
                     _ => "+OK",
                 };
 
-                println!("msg: {}\nres: {}\n", str, response);
+                println!("res: {}\n", res);
 
                 writer
-                    .write(format!("{}\r\n", response).as_bytes())
+                    .write(format!("{}\r\n", res).as_bytes())
                     .expect("Thought I could write back!?");
                 writer.flush().expect("Couldn't flush");
             }
-            Err(e) => {
-                println!("error receiving: {}", e);
-            }
+            _ => {}
         }
     }
 }
