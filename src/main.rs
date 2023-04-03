@@ -32,6 +32,7 @@ fn main() {
     }
 }
 
+// these should obviously be in another module file
 fn handle_client(stream: TcpStream, server: Arc<Mutex<redis::Server>>) {
     println!("accepted new connection");
 

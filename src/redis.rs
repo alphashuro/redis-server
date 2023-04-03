@@ -40,6 +40,7 @@ impl Server {
             }
             Get(key) => match self.store.get(key) {
                 Some(data) => {
+                    // TODO: a background thread that expires values at an interval
                     if let Some(duration) = data.expires_in {
                         if Instant::now() > (data.inserted_at + duration) {
                             self.store.remove(key);
