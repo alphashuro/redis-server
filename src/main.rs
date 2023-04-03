@@ -1,10 +1,12 @@
 use std::net::TcpStream;
-use std::thread;
 use std::time::Duration;
 use std::{
     io::{BufRead, BufReader, BufWriter, Read, Write},
     net::TcpListener,
 };
+use threadpool::ThreadPool;
+
+mod threadpool;
 
 enum Command {
     PING,
@@ -12,12 +14,13 @@ enum Command {
 
 fn main() {
     let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
+    let thread_pool = ThreadPool::new(16);
 
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
                 // TODO: track handles so that they can be joined on shutdown
-                let _handle = thread::spawn(|| handle_client(stream));
+                let _handle = thread_pool.execute(|| handle_client(stream));
             }
             Err(e) => {
                 println!("error: {}", e);
