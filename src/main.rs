@@ -1,11 +1,12 @@
 use std::net::TcpStream;
+use std::sync::{Arc, Mutex};
 use std::{
     io::{BufRead, BufReader, BufWriter, Write},
     net::TcpListener,
 };
 use threadpool::ThreadPool;
 
-use crate::redis::run;
+use crate::redis::{format_response, parse_command, RespType};
 
 mod redis;
 mod threadpool;
@@ -13,12 +14,14 @@ mod threadpool;
 fn main() {
     let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
     let thread_pool = ThreadPool::new(16);
+    let server = Arc::new(Mutex::new(redis::Server::new()));
 
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
                 // TODO: track handles so that they can be joined on shutdown
-                let _handle = thread_pool.execute(|| handle_client(stream));
+                let server = Arc::clone(&server);
+                let _handle = thread_pool.execute(move || handle_client(stream, server));
             }
             Err(e) => {
                 println!("error: {}", e);
@@ -27,13 +30,11 @@ fn main() {
     }
 }
 
-fn handle_client(stream: TcpStream) {
+fn handle_client(stream: TcpStream, server: Arc<Mutex<redis::Server>>) {
     println!("accepted new connection");
 
     let mut reader = BufReader::new(&stream);
     let mut writer = BufWriter::new(&stream);
-    writer.write("+OK".to_string().as_bytes()).unwrap();
-    writer.flush().unwrap();
 
     let mut msg: String = Default::default();
 
@@ -55,10 +56,24 @@ fn handle_client(stream: TcpStream) {
                 let arr_size = msg[1..].parse::<usize>().unwrap();
 
                 let strings = read_bulk_strings(arr_size, &mut reader);
-                let response = run(&strings);
+
+                let command = &parse_command(&strings);
+
+                let response = match command {
+                    Ok(command) => {
+                        let result = server
+                            // TODO: consider only locking if store is actually used
+                            .lock()
+                            .unwrap()
+                            .exec(command);
+
+                        format_response(&result)
+                    }
+
+                    Err(e) => format_response(&RespType::Error(e.to_string())),
+                };
 
                 println!("response: {:?}", response);
-
                 writer.write(response.as_bytes()).unwrap();
                 writer.flush().unwrap();
             }
