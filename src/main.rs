@@ -1,16 +1,14 @@
 use std::net::TcpStream;
-use std::time::Duration;
 use std::{
-    io::{BufRead, BufReader, BufWriter, Read, Write},
+    io::{BufRead, BufReader, BufWriter, Write},
     net::TcpListener,
 };
 use threadpool::ThreadPool;
 
-mod threadpool;
+use crate::redis::run;
 
-enum Command {
-    PING,
-}
+mod redis;
+mod threadpool;
 
 fn main() {
     let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
@@ -29,88 +27,40 @@ fn main() {
     }
 }
 
-enum RespType {
-    SimpleString(String),
-    Error(String),
-    Integer(i64),
-    BulkString(usize),
-    Array(Vec<String>),
-}
-
-fn parse_msg(str: &str) -> Option<RespType> {
-    let mut chars = str.chars();
-
-    let resp_type_indicator = chars.next();
-
-    match resp_type_indicator {
-        Some('+') => Some(RespType::SimpleString(chars.collect())),
-        Some('-') => Some(RespType::Error(chars.collect())),
-        Some(':') => Some(RespType::Integer(
-            (chars.collect::<String>().trim()).parse::<i64>().unwrap(),
-        )),
-        Some('$') => {
-            let count_chars = chars.collect::<String>();
-            let count = count_chars.trim().parse::<usize>().unwrap();
-
-            Some(RespType::BulkString(count))
-        }
-        Some('*') => Some(RespType::Array(vec![])),
-        Some(_) | None => None,
-    }
-}
-
 fn handle_client(stream: TcpStream) {
     println!("accepted new connection");
 
     let mut reader = BufReader::new(&stream);
     let mut writer = BufWriter::new(&stream);
+    writer.write("+OK".to_string().as_bytes()).unwrap();
+    writer.flush().unwrap();
+
+    let mut msg: String = Default::default();
 
     loop {
-        let mut msg: String = Default::default();
+        msg.clear();
 
+        // TODO: read byte counts instead of lines to make faster
         match reader.read_line(&mut msg) {
             Ok(_) => {
+                // note: type of message is always Array<BulkString>
                 msg = msg.trim().to_owned();
-
                 println!("msg: {:?}", msg);
+
                 if msg.is_empty() {
+                    // TODO: confirm what this means, for now just ignore it
                     break;
                 }
 
-                match parse_msg(&msg.trim()) {
-                    Some(resp_type) => match resp_type {
-                        RespType::BulkString(_len) => {
-                            println!("type: bulk string");
+                let arr_size = msg[1..].parse::<usize>().unwrap();
 
-                            let mut cmd: String = Default::default();
-                            reader.read_line(&mut cmd).unwrap();
+                let strings = read_bulk_strings(arr_size, &mut reader);
+                let response = run(&strings);
 
-                            cmd = cmd.trim().to_owned();
+                println!("response: {:?}", response);
 
-                            println!("cmd: {:?}", cmd);
-
-                            let res = match cmd.as_str() {
-                                "ping" => "+PONG",
-                                _ => "+OK",
-                            };
-
-                            println!("res: {}", res);
-
-                            writer
-                                .write_all(format!("{}\r\n", res).as_bytes())
-                                .expect("Thought I could write back!?");
-                            writer.flush().expect("Couldn't flush");
-                        }
-                        _ => {
-                            println!("resp: {:?} not supported yet", msg)
-                        }
-                    },
-                    None => {
-                        println!("resp: {:?} not recognized", msg)
-                    }
-                };
-
-                println!("\n");
+                writer.write(response.as_bytes()).unwrap();
+                writer.flush().unwrap();
             }
             Err(e) => {
                 println!("couldn't read line: {}", e);
@@ -118,4 +68,26 @@ fn handle_client(stream: TcpStream) {
             }
         }
     }
+}
+
+/// Reads n bulk strings from the reader
+/// TODO: figure out what BufReader's type arg should be
+fn read_bulk_strings(n: usize, reader: &mut BufReader<&TcpStream>) -> Vec<String> {
+    let mut strings: Vec<String> = Vec::with_capacity(n);
+
+    let mut buf = String::new();
+
+    // each bulk string spans 2 lines
+    // so we iterate every two lines
+    // and only process the odd ones
+    for i in 0..n * 2 {
+        buf.clear();
+        reader.read_line(&mut buf).unwrap();
+
+        if i % 2 != 0 {
+            strings.push(buf.trim().to_string());
+        }
+    }
+
+    strings
 }
