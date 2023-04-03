@@ -27,6 +27,7 @@ pub fn parse_command(strings: &Vec<String>) -> Result<RedisCmd, String> {
     match lower_str.as_slice() {
         ["ping"] => Ok(RedisCmd::Ping),
         ["command", "docs"] => Ok(RedisCmd::Command(SubCommand::Docs)),
+        ["echo", text] => Ok(RedisCmd::Echo(text.to_string())),
         _ => Err(format!("command not known: {:?}", strings)),
     }
 }
@@ -48,6 +49,8 @@ pub fn format_response(response: &RespType) -> String {
 }
 
 pub fn run(request: &Vec<String>) -> String {
+    println!("{:?}", request);
+
     let command = parse_command(request).unwrap();
     let response = exec_command(&command);
 
