@@ -1,5 +1,3 @@
-![progress-banner](https://app.codecrafters.io/progress/redis/c181b7d6-680c-4106-9996-9f3325071a27)
-
 This is my implmentation of the
 [Code Crafters "Build Your Own Redis" Challenge](https://codecrafters.io/challenges/redis).
 
