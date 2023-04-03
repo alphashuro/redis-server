@@ -1,5 +1,6 @@
 use std::net::TcpStream;
-
+use std::thread;
+use std::time::Duration;
 use std::{
     io::{BufRead, BufReader, BufWriter, Read, Write},
     net::TcpListener,
@@ -14,7 +15,10 @@ fn main() {
 
     for stream in listener.incoming() {
         match stream {
-            Ok(stream) => handle_client(stream),
+            Ok(stream) => {
+                // TODO: track handles so that they can be joined on shutdown
+                let _handle = thread::spawn(|| handle_client(stream));
+            }
             Err(e) => {
                 println!("error: {}", e);
             }
@@ -61,33 +65,54 @@ fn handle_client(stream: TcpStream) {
     loop {
         let mut msg: String = Default::default();
 
-        reader.read_line(&mut msg).unwrap();
+        match reader.read_line(&mut msg) {
+            Ok(_) => {
+                msg = msg.trim().to_owned();
 
-        println!("msg: {}", msg);
+                println!("msg: {:?}", msg);
+                if msg.is_empty() {
+                    break;
+                }
 
-        let resp_type = parse_msg(&msg).unwrap();
+                match parse_msg(&msg.trim()) {
+                    Some(resp_type) => match resp_type {
+                        RespType::BulkString(_len) => {
+                            println!("type: bulk string");
 
-        match resp_type {
-            RespType::BulkString(_len) => {
-                let mut cmd: String = Default::default();
+                            let mut cmd: String = Default::default();
+                            reader.read_line(&mut cmd).unwrap();
 
-                reader.read_line(&mut cmd).unwrap();
+                            cmd = cmd.trim().to_owned();
 
-                println!("cmd: {:?}", cmd);
+                            println!("cmd: {:?}", cmd);
 
-                let res = match cmd.as_str().trim() {
-                    "ping" => "+PONG",
-                    _ => "+OK",
+                            let res = match cmd.as_str() {
+                                "ping" => "+PONG",
+                                _ => "+OK",
+                            };
+
+                            println!("res: {}", res);
+
+                            writer
+                                .write_all(format!("{}\r\n", res).as_bytes())
+                                .expect("Thought I could write back!?");
+                            writer.flush().expect("Couldn't flush");
+                        }
+                        _ => {
+                            println!("resp: {:?} not supported yet", msg)
+                        }
+                    },
+                    None => {
+                        println!("resp: {:?} not recognized", msg)
+                    }
                 };
 
-                println!("res: {}\n", res);
-
-                writer
-                    .write(format!("{}\r\n", res).as_bytes())
-                    .expect("Thought I could write back!?");
-                writer.flush().expect("Couldn't flush");
+                println!("\n");
             }
-            _ => {}
+            Err(e) => {
+                println!("couldn't read line: {}", e);
+                break;
+            }
         }
     }
 }
